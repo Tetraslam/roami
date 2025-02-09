@@ -7,9 +7,21 @@ service firebase.storage {
       allow write: if request.auth != null && request.auth.uid == userId;
     }
     
+    // User images - owner read/write
+    match /images/{userId}/{allPaths=**} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
     // Trip memories - public read, owner write
     match /trip-memories/{userId}/{allPaths=**} {
       allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Challenge submissions - owner read/write
+    match /challenges/{userId}/{allPaths=**} {
+      allow read: if request.auth != null && request.auth.uid == userId;
       allow write: if request.auth != null && request.auth.uid == userId;
     }
     

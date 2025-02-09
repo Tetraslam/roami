@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { saveJourneyMemory } from '@/lib/firebase/utils';
 
 interface UsePassengerVoiceRecordingProps {
   onSpeechResult: (text: string) => void;
+  userId: string;
 }
 
 interface RecordingState {
@@ -14,6 +16,7 @@ interface RecordingState {
 
 export function usePassengerVoiceRecording({
   onSpeechResult,
+  userId,
 }: UsePassengerVoiceRecordingProps) {
   const [state, setState] = useState<RecordingState>({
     isRecording: false,
@@ -79,6 +82,21 @@ export function usePassengerVoiceRecording({
         if (result.isFinal) {
           console.log('Final transcript received:', text);
           transcriptRef.current.push(text);
+
+          // Save as a journey memory
+          if (userId) {
+            saveJourneyMemory({
+              userId: userId,
+              type: 'voice',
+              content: {
+                title: 'Voice Note',
+                description: text,
+              },
+              tags: ['voice']
+            }).catch(err => {
+              console.error('Error saving voice memory:', err);
+            });
+          }
         }
       }
     };
@@ -180,7 +198,7 @@ export function usePassengerVoiceRecording({
         recognition.abort();
       }
     };
-  }, [onSpeechResult]);
+  }, [onSpeechResult, userId]);
 
   const startListening = useCallback(() => {
     if (!state.recognition) {

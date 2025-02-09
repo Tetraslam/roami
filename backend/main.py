@@ -5,7 +5,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from firebase_admin import credentials
-from routers import ai, auth, location, media
+from routers import (ai, auth, challenges, cultural, location, media, music_ai,
+                     serendipity)
 
 # Load environment variables
 load_dotenv()
@@ -32,13 +33,11 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Local development
-        "https://roami.vercel.app",  # Production frontend (update this)
-    ],
+    allow_origins=["http://localhost:3000"],  # Specific origin instead of wildcard
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Include routers
@@ -46,6 +45,10 @@ app.include_router(auth.router)
 app.include_router(ai.router)
 app.include_router(location.router)
 app.include_router(media.router)
+app.include_router(music_ai.router)
+app.include_router(serendipity.router)
+app.include_router(challenges.router)
+app.include_router(cultural.router)
 
 @app.get("/")
 async def root():

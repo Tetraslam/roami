@@ -32,14 +32,22 @@ export function useTextToSpeech() {
     };
   }, []);
 
-  const speak = useCallback((text: string) => {
+  const speak = useCallback((text: string | undefined | null) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
-    if (isSpeakingRef.current) {
-      window.speechSynthesis.cancel();
+    if (!text) {
+      console.warn('TTS: No text provided to speak');
+      return;
     }
 
     try {
-      const utterance = new SpeechSynthesisUtterance(text);
+      if (isSpeakingRef.current) {
+        window.speechSynthesis.cancel();
+      }
+
+      // Remove URLs from text before speaking
+      const textWithoutUrls = text.toString().replace(/https?:\/\/[^\s]+/g, 'link');
+      
+      const utterance = new SpeechSynthesisUtterance(textWithoutUrls);
       utteranceRef.current = utterance;
 
       // Get available voices

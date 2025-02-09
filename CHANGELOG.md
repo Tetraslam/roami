@@ -3,12 +3,96 @@
 ## [Unreleased]
 
 ### Added
-- Text-to-Speech functionality:
-  - Created `useTextToSpeech` hook for handling speech synthesis
-  - Integrated TTS into ChatInterface for AI responses
-  - Added play/stop controls for each AI message
-  - Auto-play for new AI messages
-- Created VISION.md to document project goals and roadmap
+- Full chat functionality with Cerebras llama3.1-8b
+- Firebase integration:
+  - Real-time message syncing
+  - User authentication
+  - Message persistence
+  - Proper context handling
+- Voice interface:
+  - Speech-to-Text for user input
+  - Text-to-Speech for AI responses
+  - Auto-play for new messages
+  - URL skipping in speech
+- Location Services:
+  - OpenStreetMap integration
+  - Location search and retrieval
+  - Google Maps link generation
+  - Proper error handling
+- UI Improvements:
+  - Clickable links in messages
+  - Mobile-first responsive design
+  - Dark theme
+  - Loading states and animations
+- Implemented Tour Guide feature:
+  - Custom hook for managing tour state and location
+  - Automatic tour generation based on nearby attractions
+  - Historical photos and AI-generated descriptions
+  - Interactive tour navigation with maps integration
+  - Distance and duration calculations
+  - Mobile-friendly modal interface
+- Time Machine feature
+  - Search for any location and view historical photos
+  - Filter photos by year range (1800-present)
+  - View full-size photos with metadata
+  - AI-powered historical context narration
+  - Integration with Wikimedia Commons for historical photos
+  - Mobile-friendly interface with image gallery
+  - Voice narration of historical context
+- Serendipity Mode feature:
+  - Spontaneous activity suggestions based on location
+  - Mood-based recommendations
+  - Time-aware suggestions
+  - Rich context and descriptions
+  - Integration with Google Maps
+  - Mobile-friendly modal interface
+  - Journey memory integration
+- Time Capsule Challenges feature
+  - Backend API for generating location-based challenges
+  - Frontend component with photo upload capability
+  - Points and achievements system
+  - Integration with Firebase for storing challenge progress
+  - Mobile-friendly UI with horizontal scrolling navigation
+  - Challenge types include photo tasks, historical markers, and cultural discoveries
+- Cultural Compass feature
+  - Component for exploring local cultural information
+  - Categories: customs, language, food, architecture, and events
+  - Integration with journey memories
+  - Real-time location-based cultural insights
+  - Interactive category selection with icons
+  - Tips and source attribution for cultural information
+
+### Current Implementation
+- Successfully integrated Cerebras API
+- Implemented Firebase message storage
+- Added full conversation context
+- Created voice recording system
+- Added location services
+- Improved UI/UX
+
+### Next Steps
+1. **Image Processing**:
+   - Implement Moondream integration
+   - Add Firebase Storage for images
+   - Create image capture workflow
+   - Add image context to conversations
+
+2. **Tool Calls**:
+   - Implement search_osm
+   - Add historical photos integration
+   - Create music playback system
+   - Add postcard creation
+
+3. **Technical Improvements**:
+   - Add loading states for image processing
+   - Enhance error handling
+   - Improve performance
+   - Add proper testing
+
+### Known Issues
+- Image capture functionality pending implementation
+- Tool calls need to be integrated
+- Loading states needed for async operations
 
 ### Current Codebase Structure
 
@@ -149,6 +233,14 @@
 - Added proper hydration handling in HomePage component
 - Updated Firebase security rules to allow test connection
 - Added template for required environment variables
+- Improved Overpass API implementation:
+  - Fixed query syntax for proper tag filtering
+  - Added proper error handling and rate limiting
+  - Improved POI processing and deduplication
+  - Added proper User-Agent headers and timeouts
+  - Enhanced logging and debugging capabilities
+  - Better handling of different OSM element types
+  - Optimized queries for better performance
 
 ### Added
 - Added better error handling and logging for Firebase initialization
@@ -462,3 +554,355 @@
   - Removed duplicate `firestore.indexes.json` from frontend
   - Kept all Firebase config files (`firebase.json`, `firestore.rules`, `firestore.indexes.json`, `storage.rules`) in root
 - This ensures consistent configuration across both frontend and backend 
+
+## [Current System State] - 2024-03-xx
+
+### Core Architecture Overview
+
+#### Frontend (`/frontend`)
+1. **App Structure**:
+   - `app/page.tsx`: Main chat interface with streaming response handling
+   - `app/layout.tsx`: Root layout with dark theme and global styles
+   - `app/login/page.tsx`: Authentication page with Google sign-in
+
+2. **Components**:
+   - `ChatInterface.tsx`: Message display with auto-scroll and TTS
+   - `ControlButtons.tsx`: Voice and image capture controls
+   - `Header.tsx`: App navigation and user info
+   - `ProtectedRoute.tsx`: Auth route protection
+   - `FirebaseErrorBoundary.tsx`: Error handling for Firebase operations
+   - `ClientWrapper.tsx`: Client-side wrapper for Firebase and fonts
+
+3. **Hooks**:
+   - `useTextToSpeech.ts`: Voice synthesis with female voice
+   - `usePassengerVoiceRecording.ts`: Voice input handling
+   - `useAuth.ts`: Firebase authentication management
+
+4. **Firebase Integration**:
+   - `config.ts`: Firebase initialization and service setup
+   - `types.ts`: TypeScript interfaces for data models
+   - `utils.ts`: Firebase CRUD operations and utilities
+   - `auth.tsx`: Authentication context provider
+
+#### Backend (`/backend`)
+1. **Core Structure**:
+   - `main.py`: FastAPI application setup with CORS and Firebase admin
+   - `run.py`: Development server runner
+   - `requirements.txt`: Python dependencies
+
+2. **Routers**:
+   - `ai.py`: AI services (Cerebras, Moondream)
+   - `location.py`: Location services (OpenStreetMap)
+   - `media.py`: Media handling (music, photos)
+   - `auth.py`: Firebase authentication
+
+3. **Testing**:
+   - `test_ai_router.py`: AI service integration tests
+
+### Current Functionality
+
+1. **Authentication**:
+   - Google sign-in integration
+   - Protected routes
+   - User profile management
+
+2. **Chat Interface**:
+   - Real-time message streaming
+   - Voice input/output
+   - Image capture (placeholder)
+   - Firestore message persistence
+
+3. **AI Integration**:
+   - Cerebras llama3.1-8b for chat
+   - Moondream for image analysis
+   - Tool-based response system
+
+### Critical Implementation Details
+
+1. **Message Handling**:
+   ```typescript
+   // Message structure in Firestore
+   interface ChatMessage {
+     id: string;
+     userId: string;
+     type: 'user' | 'ai';
+     content: string;
+     timestamp: Timestamp;
+     hasImage?: boolean;
+     imageUrl?: string;
+   }
+   ```
+
+2. **Voice Recording**:
+   ```typescript
+   // Key configuration in usePassengerVoiceRecording
+   recognition.continuous = true;
+   recognition.interimResults = true;
+   recognition.lang = 'en-US';
+   ```
+
+3. **AI Response Processing**:
+   ```python
+   # Tool schema structure
+   TOOLS = [
+     {
+       "type": "function",
+       "function": {
+         "name": "get_location",
+         "description": "Get current location or search for a place",
+         "parameters": {...}
+       }
+     },
+     # Additional tools...
+   ]
+   ```
+
+### Important Safeguards
+
+1. **Firebase Operations**:
+   - Always use type-safe operations from `utils.ts`
+   - Check auth state before Firestore operations
+   - Handle Firebase errors in ErrorBoundary
+
+2. **Voice Recording**:
+   - Clear transcript at start of recording
+   - Handle 'no-speech' errors gracefully
+   - Proper cleanup on unmount
+
+3. **AI Integration**:
+   - Validate tool call parameters
+   - Handle streaming responses properly
+   - Implement proper error handling
+
+### Common Pitfalls to Avoid
+
+1. **Firebase**:
+   - Don't use raw Firestore operations
+   - Don't store sensitive data in client
+   - Don't forget error boundaries
+
+2. **Voice Recording**:
+   - Don't use `continuous = false`
+   - Don't update state on every result
+   - Don't forget proper cleanup
+
+3. **AI Integration**:
+   - Don't expose API keys
+   - Don't ignore tool call validation
+   - Don't forget to handle errors
+
+### Next Development Focus
+
+1. **Tool Implementation**:
+   - Location services in `location.py`
+   - Media handling in `media.py`
+   - AI tool calls in `ai.py`
+
+2. **Testing Requirements**:
+   - Unit tests for each tool
+   - Integration tests for AI
+   - Error handling validation
+
+3. **Documentation Needs**:
+   - API documentation
+   - Tool usage examples
+   - Error handling guides
+
+### Environment Setup
+
+1. **Required Environment Variables**:
+   ```
+   # Frontend (.env.local)
+   NEXT_PUBLIC_FIREBASE_*=[Firebase config]
+
+   # Backend (.env)
+   CEREBRAS_API_KEY=[Your key]
+   MOONDREAM_API_KEY=[Your key]
+   FIREBASE_*=[Admin config]
+   ```
+
+2. **Development Commands**:
+   ```bash
+   # Frontend
+   npm run dev
+
+   # Backend
+   uvicorn main:app --reload --port 8000
+   ```
+
+### Security Considerations
+
+1. **API Keys**:
+   - Keep all keys in environment variables
+   - Use Firebase security rules
+   - Implement proper CORS
+
+2. **Authentication**:
+   - Verify Firebase tokens
+   - Check user permissions
+   - Sanitize user input
+
+3. **Data Safety**:
+   - Validate all tool inputs
+   - Sanitize AI responses
+   - Handle sensitive data properly
+
+### Technical Details
+- Location Router (`backend/routers/location.py`)
+  - `/location/search` endpoint:
+    - Text-based location search with optional location context
+    - Returns up to 10 results with rich details
+    - Supports radius-based filtering when coordinates provided
+  - `/nearby/{category}` endpoint:
+    - Category-based POI search using Overpass API
+    - Supports 100m to 5km radius
+    - Returns up to 50 results sorted by distance
+    - Includes accessibility info (wheelchair access)
+
+### Usage Notes
+- No API key required for OpenStreetMap services
+- Respect rate limits:
+  - Nominatim: Max 1 request per second
+  - Overpass: Be mindful of query complexity
+- Category mapping can be extended in code for additional POI types
+
+### Next Steps
+- Implement route optimization for "worth the detour" feature
+- Add parking spot finder with real-time availability
+- Integrate historical context for tourist attractions
+- Add caching layer for frequently accessed locations
+
+## Media Router Implementation (2024-03-xx)
+
+### Added
+- Implemented `/media/music/search` endpoint using yt-dlp
+  - Search and retrieve music stream URLs
+  - Duration limits and format selection
+  - Rich metadata including title, artist, thumbnail
+
+- Implemented `/media/music/stream` endpoint
+  - Proxy streaming to avoid CORS issues
+  - Proper audio headers and byte streaming
+  - Error handling for failed streams
+
+- Implemented `/media/photos/historical` endpoint using Wikimedia Commons API
+  - Location-based historical photo search
+  - Year range filtering
+  - Rich metadata including descriptions, authors, licenses
+  - Thumbnail and source URL support
+
+- Implemented `/media/photos/random` endpoint
+  - Category-based random photo retrieval
+  - Configurable result limits
+  - Full metadata and attribution
+
+### Dependencies
+- Added `yt-dlp` for music search and streaming
+- Using `httpx` for async HTTP requests
+- Wikimedia Commons API integration
+
+### Important Notes
+- Music duration is limited to between 30 seconds and 30 minutes
+- Historical photo search radius is limited to 5km
+- Random photo results are capped at 50 items
+- All endpoints include proper error handling and validation
+
+### Next Steps
+1. Add caching layer for frequently accessed media
+2. Implement rate limiting for external APIs
+3. Add more music sources beyond YouTube
+4. Enhance photo filtering options (e.g., by license type)
+5. Add support for video content
+
+## AI Router Tool Integration (2024-03-xx)
+
+### Added
+- Integrated location and media services with AI router's tool system
+  - Location tools: `get_location` and `search_osm`
+  - Media tools: `get_historical_photos`, `play_music`, and `create_postcard`
+  - Tool execution with proper error handling and result formatting
+
+### Changes
+- Moved location and media functionality to dedicated routers
+- Enhanced tool call handling in AI chat endpoint
+  - Added support for multiple tool calls in sequence
+  - Improved error handling and result formatting
+  - Added tool results to conversation context
+
+### Important Notes
+- Tool calls are now properly integrated with Cerebras API
+- Each tool has its own dedicated router for better code organization
+- Results are properly formatted and returned to the AI for context
+
+### Next Steps
+1. Add caching for frequently used tool results
+2. Implement rate limiting for external API calls
+3. Add more sophisticated error handling and retries
+4. Enhance tool result formatting for better AI understanding
+5. Add more tools for enhanced roadtrip features
+
+### Fixed
+- Fixed AI router tool execution:
+  - Added proper imports for location and media models
+  - Improved error handling in tool execution
+  - Added logging for tool execution errors
+  - Fixed LocationQuery import issue
+
+### Added
+- Implemented postcard creation in media router:
+  - Image resizing and optimization
+  - Text overlay with location name and optional message
+  - Base64 image response for immediate display
+  - Error handling and logging
+  - Font fallback system
+
+### Fixed
+- Added proper imports for location and media router functions in `ai.py`:
+  - Imported `LocationQuery`, `search_locations`, and `find_nearby` from location router
+  - Imported `MusicRequest`, `search_music`, `HistoricalPhotoRequest`, `get_historical_photos`, and `create_postcard` from media router
+  - Fixed import organization and removed duplicate imports
+  - Resolved tool execution errors related to missing imports
+
+### Recent Updates
+- ✅ Added Tour Guide component with location-based attractions
+- ✅ Integrated historical photos from Wikimedia Commons
+- ✅ Added AI-powered location descriptions
+- ✅ Implemented distance and duration calculations
+- ✅ Created mobile-friendly tour interface
+
+### High Priority
+1. Tour Guide Enhancements
+   - Add turn-by-turn navigation
+   - Implement tour progress saving
+   - Add custom tour preferences
+   - Support multiple tour types (walking, driving)
+   - Add accessibility information for stops
+
+### Added
+- Implemented Cultural Compass backend:
+  - Created `/cultural/info` endpoint for location-based cultural insights
+  - Added Cerebras AI integration for cultural information
+  - Implemented location name lookup using OpenStreetMap
+  - Added comprehensive error handling and logging
+  - Support for multiple cultural categories:
+    - Local customs and traditions
+    - Language and dialect features
+    - Food culture and dining customs
+    - Architectural styles
+    - Cultural events and festivals
+
+### Technical Details
+- Added new cultural router with async endpoints
+- Integrated with Cerebras llama3.3-70b model for cultural insights
+- Added input validation using Pydantic models
+- Implemented proper error handling and logging
+- Updated httpx to version 0.27.0
+
+### Next Steps
+1. Add caching for frequently requested cultural information
+2. Implement rate limiting for external API calls
+3. Add more detailed cultural categories
+4. Enhance AI prompts for better cultural insights
+5. Add support for multiple languages
+
+// ... existing content ... 

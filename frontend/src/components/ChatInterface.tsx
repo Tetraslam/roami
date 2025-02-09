@@ -4,6 +4,31 @@ import * as React from 'react';
 import { motion } from 'framer-motion';
 import { useTextToSpeech } from '@/hooks/useTextToSpeech';
 
+// Add link parsing function
+function parseMessageContent(content: string) {
+  // Regex to match URLs
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = content.split(urlRegex);
+  
+  return parts.map((part, index) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary-300 hover:text-primary-400 underline break-all"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {part}
+        </a>
+      );
+    }
+    return <span key={index}>{part}</span>;
+  });
+}
+
 interface Message {
   id: string;
   type: 'user' | 'ai';
@@ -81,7 +106,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages }) => {
                 : 'bg-neutral-800 text-neutral-100 border border-neutral-700'
             }`}
           >
-            <p className="text-sm">{message.content}</p>
+            <p className="text-sm">{parseMessageContent(message.content)}</p>
             {message.hasImage && message.imageUrl && (
               <img
                 src={message.imageUrl}

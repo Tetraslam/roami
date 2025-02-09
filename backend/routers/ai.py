@@ -1,10 +1,8 @@
 import base64
-import io
 import json
 import logging
 import os
-from datetime import datetime
-from typing import AsyncGenerator, Dict, List, Optional
+from typing import AsyncGenerator, List, Optional
 
 import httpx
 import yt_dlp
@@ -12,6 +10,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel
+
+from .location import LocationQuery, find_nearby, search_locations
+from .media import (HistoricalPhotoRequest, MusicRequest, create_postcard,
+                    get_historical_photos, search_music)
 
 router = APIRouter(
     prefix="/ai",
@@ -34,6 +36,12 @@ class ToolCall(BaseModel):
 class ImageAnalysisRequest(BaseModel):
     image_url: str
     prompt: Optional[str] = None
+
+class TourStopRequest(BaseModel):
+    name: str
+    type: str
+    year: Optional[int] = None
+    city: str
 
 # Tool schemas according to Cerebras documentation
 TOOLS = [
@@ -248,11 +256,21 @@ async def get_image_description(image_data: str, is_base64: bool = False) -> str
 async def get_cerebras_response(messages: List[dict]) -> AsyncGenerator[dict, None]:
     """Get response from Cerebras llama3.1-8b"""
     try:
+        api_key = os.getenv("CEREBRAS_API_KEY")
+        if not api_key:
+            raise ValueError("CEREBRAS_API_KEY environment variable not set")
+            
         print("Sending request to Cerebras API...")
         print(f"Messages: {json.dumps(messages, indent=2)}")
         
+        # Validate message roles
+        for msg in messages:
+            if msg["role"] not in ["system", "user", "assistant"]:
+                logging.warning(f"Converting message role '{msg['role']}' to 'system'")
+                msg["role"] = "system"
+        
         request_body = {
-            "model": "llama3.1-8b",
+            "model": "llama3.3-70b",
             "messages": messages,
             "tools": TOOLS,
             "stream": False  # Disable streaming
@@ -264,7 +282,7 @@ async def get_cerebras_response(messages: List[dict]) -> AsyncGenerator[dict, No
             response = await client.post(
                 "https://api.cerebras.ai/v1/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {os.getenv('CEREBRAS_API_KEY')}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json"
                 },
                 json=request_body,
@@ -272,8 +290,16 @@ async def get_cerebras_response(messages: List[dict]) -> AsyncGenerator[dict, No
             )
             
             print(f"Cerebras API Status Code: {response.status_code}")
+            print(f"Cerebras API Response Headers: {response.headers}")
+            
             if response.status_code != 200:
-                error_detail = response.json() if response.headers.get("content-type") == "application/json" else response.text
+                error_text = await response.aread()
+                try:
+                    error_json = response.json()
+                    error_detail = json.dumps(error_json, indent=2)
+                except:
+                    error_detail = error_text.decode('utf-8')
+                    
                 print(f"Cerebras API Error: {error_detail}")
                 raise HTTPException(
                     status_code=response.status_code,
@@ -282,354 +308,287 @@ async def get_cerebras_response(messages: List[dict]) -> AsyncGenerator[dict, No
 
             data = response.json()
             print(f"Cerebras response: {json.dumps(data, indent=2)}")
+            
+            if not data or not isinstance(data, dict):
+                raise ValueError(f"Invalid response format: {data}")
+                
             yield data
 
     except httpx.TimeoutException as e:
         print(f"Timeout error: {str(e)}")
-        raise HTTPException(status_code=504, detail="Request to Cerebras API timed out")
+        raise HTTPException(status_code=504, detail=f"Request to Cerebras API timed out: {str(e)}")
     except httpx.RequestError as e:
         print(f"Request error: {str(e)}")
         raise HTTPException(status_code=502, detail=f"Network error communicating with Cerebras API: {str(e)}")
     except Exception as e:
-        print(f"Unexpected error: {str(e)}")
+        print(f"Unexpected error in get_cerebras_response: {str(e)}")
+        logging.exception("Error in get_cerebras_response")
         raise HTTPException(status_code=500, detail=f"Error getting AI response: {str(e)}")
 
 async def execute_tool_calls(tool_calls: List[dict]) -> dict:
     """Execute tool calls from the AI response"""
+    if not tool_calls:
+        raise ValueError("No tool calls provided")
+        
     results = {}
+    errors = []
+    
     for tool in tool_calls:
         try:
-            if tool["name"] == "get_location":
-                results["location"] = await get_location(tool["parameters"])
-            elif tool["name"] == "search_osm":
-                results["places"] = await search_osm(tool["parameters"])
-            elif tool["name"] == "get_historical_photos":
-                results["photos"] = await get_historical_photos(tool["parameters"])
-            elif tool["name"] == "play_music":
-                results["music"] = await play_music(tool["parameters"])
-            elif tool["name"] == "create_postcard":
-                results["postcard"] = await create_postcard(tool["parameters"])
-        except Exception as e:
-            results[tool["name"]] = {"error": str(e)}
-    return results
-
-async def get_location(params: dict) -> dict:
-    """Get location information"""
-    query = params.get("query")
-    if query == "current":
-        # For now, return a default location (can be updated with actual geolocation)
-        return {
-            "latitude": 40.7128,
-            "longitude": -74.0060,
-            "name": "Current Location",
-            "address": "New York, NY, USA"
-        }
-    
-    # Use Nominatim for geocoding
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://nominatim.openstreetmap.org/search",
-                params={
-                    "q": query,
-                    "format": "json",
-                    "limit": 1,
-                    "addressdetails": 1
-                },
-                headers={
-                    "User-Agent": "Roami/1.0"
-                }
-            )
-            if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code, detail="Geocoding error")
-            
-            results = response.json()
-            if not results:
-                return {"error": "Location not found"}
-            
-            location = results[0]
-            return {
-                "latitude": float(location["lat"]),
-                "longitude": float(location["lon"]),
-                "name": location["display_name"],
-                "address": location.get("address", {})
-            }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting location: {str(e)}")
-
-async def search_osm(params: dict) -> List[dict]:
-    """Search OpenStreetMap for POIs"""
-    query = params["query"]
-    lat = params["latitude"]
-    lon = params["longitude"]
-    radius = params.get("radius", 1000)
-
-    # Construct Overpass query
-    overpass_query = f"""
-    [out:json][timeout:25];
-    (
-        node["amenity"](around:{radius},{lat},{lon});
-        way["amenity"](around:{radius},{lat},{lon});
-        node["tourism"](around:{radius},{lat},{lon});
-        way["tourism"](around:{radius},{lat},{lon});
-    );
-    out body;
-    >;
-    out skel qt;
-    """
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                os.getenv("OVERPASS_API_URL", "https://overpass-api.de/api/interpreter"),
-                data={"data": overpass_query},
-                timeout=30.0
-            )
-            
-            if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code, detail="Overpass API error")
-            
-            data = response.json()
-            places = []
-            
-            for element in data.get("elements", []):
-                if "tags" in element:
-                    place = {
-                        "type": element["type"],
-                        "id": element["id"],
-                        "latitude": element.get("lat", lat),
-                        "longitude": element.get("lon", lon),
-                        "name": element["tags"].get("name", "Unnamed"),
-                        "amenity": element["tags"].get("amenity"),
-                        "tourism": element["tags"].get("tourism"),
-                        "description": element["tags"].get("description"),
-                        "website": element["tags"].get("website"),
-                        "opening_hours": element["tags"].get("opening_hours")
-                    }
-                    places.append(place)
-            
-            # Sort by distance from search center
-            places.sort(key=lambda x: ((x["latitude"] - lat) ** 2 + (x["longitude"] - lon) ** 2) ** 0.5)
-            
-            return places[:10]  # Return top 10 results
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error searching OSM: {str(e)}")
-
-async def get_historical_photos(params: dict) -> List[dict]:
-    """Get historical photos from Wikimedia Commons"""
-    lat = params["latitude"]
-    lon = params["longitude"]
-    radius = params.get("radius", 1000)
-    year_from = params.get("year_from")
-    year_to = params.get("year_to")
-
-    try:
-        async with httpx.AsyncClient() as client:
-            # First, search for geotagged images
-            response = await client.get(
-                "https://commons.wikimedia.org/w/api.php",
-                params={
-                    "action": "query",
-                    "format": "json",
-                    "list": "geosearch",
-                    "gscoord": f"{lat}|{lon}",
-                    "gsradius": radius,
-                    "gslimit": 20,
-                    "generator": "search",
-                    "gsnamespace": 6,  # File namespace
-                    "prop": "imageinfo|categories",
-                    "iiprop": "url|timestamp|user|extmetadata",
-                    "iiurlwidth": 800,
-                },
-                headers={
-                    "User-Agent": os.getenv("WIKIMEDIA_USER_AGENT")
-                }
-            )
-
-            if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code, detail="Wikimedia API error")
-
-            data = response.json()
-            photos = []
-
-            for page in data.get("query", {}).get("pages", {}).values():
-                if "imageinfo" not in page:
-                    continue
-
-                info = page["imageinfo"][0]
-                metadata = info.get("extmetadata", {})
+            tool_id = tool.get("id")
+            if not tool_id:
+                raise ValueError(f"Missing tool ID in tool call: {json.dumps(tool, indent=2)}")
                 
-                # Extract year from date if available
-                date_str = metadata.get("DateTimeOriginal", {}).get("value", "")
-                try:
-                    year = int(date_str[:4])
-                    if year_from and year < year_from:
-                        continue
-                    if year_to and year > year_to:
-                        continue
-                except (ValueError, TypeError):
-                    year = None
-
-                photo = {
-                    "title": page["title"],
-                    "url": info["url"],
-                    "thumbnail": info.get("thumburl"),
-                    "year": year,
-                    "description": metadata.get("ImageDescription", {}).get("value"),
-                    "author": metadata.get("Artist", {}).get("value"),
-                    "license": metadata.get("License", {}).get("value"),
-                    "latitude": lat,
-                    "longitude": lon
-                }
-                photos.append(photo)
-
-            return photos
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting historical photos: {str(e)}")
-
-async def play_music(params: dict) -> dict:
-    """Search and play music using yt-dlp"""
-    query = params["query"]
-    duration_limit = params.get("duration_limit", 600)  # 10 minutes default
-
-    try:
-        # Configure yt-dlp
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'extract_audio': True,
-            'audioformat': 'mp3',
-            'outtmpl': '%(id)s.%(ext)s',
-            'quiet': True,
-            'no_warnings': True,
-            'default_search': 'ytsearch',
-            'max_downloads': 1,
-            'duration_limit': duration_limit
-        }
-
-        # Search for video
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            function = tool.get("function", {})
+            name = function.get("name")
+            if not name:
+                raise ValueError(f"Missing function name in tool call: {json.dumps(tool, indent=2)}")
+                
+            args_str = function.get("arguments", "{}")
             try:
-                # Search and get video info
-                result = ydl.extract_info(f"ytsearch1:{query}", download=False)
-                
-                if 'entries' in result:
-                    video = result['entries'][0]
-                else:
-                    video = result
-
-                # Get the best audio format URL
-                formats = video.get('formats', [])
-                audio_formats = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
-                
-                if not audio_formats:
-                    audio_formats = formats
-                
-                best_audio = max(audio_formats, key=lambda f: f.get('abr', 0) if f.get('abr') else 0)
-
-                return {
-                    "title": video.get('title'),
-                    "url": best_audio.get('url'),
-                    "duration": video.get('duration'),
-                    "thumbnail": video.get('thumbnail'),
-                    "artist": video.get('artist') or video.get('uploader'),
-                    "format": best_audio.get('format_id')
-                }
-
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Error searching for music: {str(e)}")
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error configuring music player: {str(e)}")
-
-async def create_postcard(params: dict) -> dict:
-    """Create a postcard from an image with location details"""
-    image_url = params["image_url"]
-    location_name = params["location_name"]
-    message = params.get("message", "Greetings from {}!".format(location_name))
-
-    try:
-        # Download the image
-        async with httpx.AsyncClient() as client:
-            response = await client.get(image_url)
-            if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code, detail="Error downloading image")
+                args = json.loads(args_str)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in tool arguments: {args_str}. Error: {str(e)}")
             
-            image_data = response.content
-            image = Image.open(io.BytesIO(image_data))
-
-        # Resize image to standard postcard size (6x4 inches at 300dpi)
-        postcard_size = (1800, 1200)
-        image = image.resize(postcard_size, Image.Resampling.LANCZOS)
-
-        # Create a new image with white space for text
-        postcard = Image.new('RGB', postcard_size, 'white')
-        postcard.paste(image.resize((1800, 900), Image.Resampling.LANCZOS), (0, 0))
-
-        # Add text
-        draw = ImageDraw.Draw(postcard)
-        
-        # Use a default font (you might want to include a custom font file)
-        # font = ImageFont.truetype("path/to/font.ttf", size=40)
-        font = ImageFont.load_default()
-
-        # Add location and date
-        date_str = datetime.now().strftime("%B %d, %Y")
-        draw.text((50, 920), location_name, fill='black', font=font)
-        draw.text((50, 970), date_str, fill='black', font=font)
-
-        # Add message
-        draw.text((50, 1020), message, fill='black', font=font)
-
-        # Convert to base64
-        buffer = io.BytesIO()
-        postcard.save(buffer, format='JPEG', quality=85)
-        image_base64 = base64.b64encode(buffer.getvalue()).decode()
-
-        return {
-            "image": f"data:image/jpeg;base64,{image_base64}",
-            "location": location_name,
-            "date": date_str,
-            "message": message
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating postcard: {str(e)}")
+            logging.info(f"Executing tool {name} with args: {json.dumps(args, indent=2)}")
+            
+            if name == "get_location":
+                if "query" not in args:
+                    raise ValueError(f"Missing required 'query' parameter for get_location: {json.dumps(args, indent=2)}")
+                result = await search_locations(
+                    LocationQuery(query=args["query"])
+                )
+                results[tool_id] = {
+                    "tool_result": {
+                        "tool_call_id": tool_id,
+                        "result": result
+                    }
+                }
+                
+            elif name == "search_osm":
+                required = ["query", "latitude", "longitude"]
+                missing = [p for p in required if p not in args]
+                if missing:
+                    raise ValueError(f"Missing required parameters for search_osm: {missing}")
+                    
+                result = await find_nearby(
+                    category=args["query"],
+                    lat=args["latitude"],
+                    lon=args["longitude"],
+                    radius=args.get("radius", 1000)
+                )
+                results[tool_id] = {
+                    "tool_result": {
+                        "tool_call_id": tool_id,
+                        "result": result
+                    }
+                }
+                
+            elif name == "get_historical_photos":
+                required = ["latitude", "longitude"]
+                missing = [p for p in required if p not in args]
+                if missing:
+                    raise ValueError(f"Missing required parameters for get_historical_photos: {missing}")
+                    
+                result = await get_historical_photos(
+                    HistoricalPhotoRequest(
+                        latitude=args["latitude"],
+                        longitude=args["longitude"],
+                        radius=args.get("radius"),
+                        year_from=args.get("year_from"),
+                        year_to=args.get("year_to")
+                    )
+                )
+                results[tool_id] = {
+                    "tool_result": {
+                        "tool_call_id": tool_id,
+                        "result": result
+                    }
+                }
+                
+            elif name == "play_music":
+                if "query" not in args:
+                    raise ValueError(f"Missing required 'query' parameter for play_music: {json.dumps(args, indent=2)}")
+                    
+                result = await search_music(
+                    MusicRequest(
+                        query=args["query"],
+                        duration_limit=args.get("duration_limit", 600)
+                    )
+                )
+                results[tool_id] = {
+                    "tool_result": {
+                        "tool_call_id": tool_id,
+                        "result": result
+                    }
+                }
+                
+            elif name == "create_postcard":
+                required = ["image_url", "location_name"]
+                missing = [p for p in required if p not in args]
+                if missing:
+                    raise ValueError(f"Missing required parameters for create_postcard: {missing}")
+                    
+                result = await create_postcard(args)
+                results[tool_id] = {
+                    "tool_result": {
+                        "tool_call_id": tool_id,
+                        "result": result
+                    }
+                }
+                
+            else:
+                raise ValueError(f"Unknown tool name: {name}")
+                
+            logging.info(f"Tool {name} executed successfully. Result: {json.dumps(results[tool_id], indent=2)}")
+                
+        except Exception as e:
+            error_msg = f"Error executing tool {name}: {str(e)}"
+            logging.exception(error_msg)
+            errors.append(error_msg)
+            results[tool_id] = {
+                "tool_result": {
+                    "tool_call_id": tool_id,
+                    "result": {"error": error_msg}
+                }
+            }
+            
+    if errors:
+        raise ValueError("\n".join(errors))
+            
+    return results
 
 @router.post("/chat")
 async def chat_with_ai(request: ChatRequest):
     """Main chat endpoint that handles all user interactions"""
-    print("Received chat request:", request)
-    
     try:
+        logging.info("Received chat request: %s", request)
         print("Starting response generation...")
-        # 1. Process any images first
+        
+        # Get user ID from the first user message
+        user_id = None
+        for msg in request.messages:
+            if msg.role == "user":
+                user_id = request.context.get('userId') if request.context else None
+                break
+                
+        if not user_id:
+            raise ValueError("No user ID found in request context")
+        
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        
+        # Fetch previous messages from Firebase
+        from firebase_admin import firestore
+        db = firestore.client()
+        messages_ref = db.collection('messages')
+        query = messages_ref.where('userId', '==', user_id).order_by('timestamp', direction=firestore.Query.ASCENDING)
+        docs = query.stream()
+        
+        # Add previous messages to context
+        for doc in docs:
+            msg_data = doc.to_dict()
+            role = "assistant" if msg_data['type'] == 'ai' else "user"
+            messages.append({
+                "role": role,
+                "content": msg_data['content']
+            })
+        
+        # Add current message from the request
+        messages.append({"role": "user", "content": request.messages[-1].content})
+
+        logging.info("Prepared messages for Cerebras: %s", json.dumps(messages, indent=2))
+
+        # Process any images
         if any(msg.image_url for msg in request.messages):
-            print("Processing image in request...")
+            logging.info("Processing image in request...")
             latest_image = next(msg for msg in reversed(request.messages) if msg.image_url)
             description = await get_image_description(latest_image.image_url)
-            
-            # Add description to messages
-            request.messages.append(ChatMessage(
-                role="system",
-                content=f"The image shows: {description}"
-            ))
+            messages.append({"role": "system", "content": f"The image shows: {description}"})
 
-        print("Getting AI response...")
-        # 2. Get AI response with potential tool calls
-        async for response in get_cerebras_response([
-            {"role": "system", "content": SYSTEM_PROMPT},
-            *[{"role": m.role, "content": m.content} for m in request.messages]
-        ]):
-            if response.get("choices") and response["choices"][0].get("message"):
-                return response["choices"][0]["message"]
-            return {"error": "Invalid response format from Cerebras"}
+        logging.info("Getting AI response...")
+        async for response in get_cerebras_response(messages):
+            logging.info("Received response from Cerebras: %s", json.dumps(response, indent=2))
+            
+            if not response:
+                raise ValueError("Empty response from Cerebras API")
+                
+            if not response.get("choices"):
+                raise ValueError(f"No choices in response: {json.dumps(response, indent=2)}")
+                
+            if not response["choices"][0].get("message"):
+                raise ValueError(f"No message in first choice: {json.dumps(response['choices'][0], indent=2)}")
+                
+            message = response["choices"][0]["message"]
+            logging.info("Extracted message from response: %s", json.dumps(message, indent=2))
+            
+            # Execute any tool calls
+            if message.get("tool_calls"):
+                logging.info("Found tool calls in message: %s", json.dumps(message["tool_calls"], indent=2))
+                tool_results = await execute_tool_calls(message["tool_calls"])
+                logging.info("Tool execution results: %s", json.dumps(tool_results, indent=2))
+                
+                # Add tool results to messages
+                for tool_call in message["tool_calls"]:
+                    tool_id = tool_call["id"]
+                    result = tool_results.get(tool_id)
+                    if result is None:
+                        raise ValueError(f"No result for tool call {tool_id}")
+                    
+                    # Extract the actual result from the tool_result structure
+                    tool_result = result["tool_result"]["result"]
+                    
+                    # For location results, format a nice response with the Google Maps link
+                    if tool_call['function']['name'] == 'get_location' and tool_result:
+                        try:
+                            location = tool_result[0]  # Get first location result
+                            lat = location['coordinates']['latitude']
+                            lon = location['coordinates']['longitude']
+                            name = location['name']
+                            maps_link = f"https://www.google.com/maps?q={lat},{lon}"
+                            response_text = f"I found {name}. Here's the location on Google Maps: {maps_link}"
+                            
+                            # Return immediately with the formatted response
+                            return {"content": response_text}
+                        except (IndexError, KeyError) as e:
+                            logging.error(f"Error formatting location data: {str(e)}")
+                    
+                    # For other tool results, truncate if needed
+                    result_str = json.dumps(tool_result)
+                    if len(result_str) > 500:  # Truncate if longer than 500 chars
+                        result_str = result_str[:497] + "..."
+                        
+                    messages.append({
+                        "role": "system",
+                        "content": f"Tool {tool_call['function']['name']} returned: {result_str}"
+                    })
+                    
+                    logging.info("Added tool result to messages: %s", json.dumps(messages[-1], indent=2))
+                
+                # Get final response with tool results
+                logging.info("Getting final response with tool results...")
+                async for final_response in get_cerebras_response(messages):
+                    if not final_response or not final_response.get("choices"):
+                        raise ValueError(f"Invalid final response: {json.dumps(final_response, indent=2)}")
+                        
+                    if not final_response["choices"][0].get("message"):
+                        raise ValueError(f"No message in final response: {json.dumps(final_response['choices'][0], indent=2)}")
+                        
+                    final_message = final_response["choices"][0]["message"]
+                    content = final_message.get("content", "")
+                    
+                    # Return the content directly without saving to Firebase
+                    return {"content": content}
+            
+            # If no tool calls, save and return the message content directly
+            content = message.get("content", "")
+            
+            return {"content": content}
 
     except Exception as e:
-        return {
-            "error": f"Sorry, I encountered an error: {str(e)}"
-        }
+        logging.exception("Error in chat endpoint")
+        error_message = f"Sorry, I encountered an error: {str(e)}. Check the server logs for more details."
+        
+        return {"error": error_message}
 
 @router.post("/analyze-image")
 async def analyze_image(request: ImageAnalysisRequest):
@@ -637,7 +596,62 @@ async def analyze_image(request: ImageAnalysisRequest):
     Analyze an image using Moondream
     """
     try:
-        description = await get_image_description(request.image_url)
-        return {"description": description}
+        # Download image from Firebase Storage URL
+        async with httpx.AsyncClient() as client:
+            response = await client.get(request.image_url)
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Failed to fetch image from URL: {response.status_code}"
+                )
+            
+            # Convert to base64
+            image_base64 = base64.b64encode(response.content).decode('utf-8')
+            
+            # Get description from Moondream
+            description = await get_image_description(image_base64, is_base64=True)
+            
+            # Return the description
+            return {"description": description}
+            
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error analyzing image: {str(e)}") 
+        logging.error(f"Error analyzing image: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error analyzing image: {str(e)}"
+        )
+
+@router.post("/generate-stop-description")
+async def generate_stop_description(request: TourStopRequest) -> dict:
+    """
+    Generate a description for a tour stop using Cerebras AI
+    """
+    try:
+        # Construct the prompt
+        year_context = f" from {request.year}" if request.year else ""
+        prompt = f"""Generate a brief, engaging description (2-3 sentences) of {request.name}, a historic {request.type} located specifically in {request.city}{year_context}.
+        IMPORTANT: Focus only on the {request.name} that is located in {request.city}, not any similarly named landmarks in other cities.
+        Include its historical significance, interesting facts, and its specific connection to {request.city}'s history."""
+
+        messages = [
+            {"role": "system", "content": f"""You are a knowledgeable tour guide with expertise in {request.city}'s local history.
+            When describing landmarks, always ensure you are referring to the specific landmark in {request.city}, not similarly named places elsewhere.
+            Focus on accurate, location-specific historical information."""},
+            {"role": "user", "content": prompt}
+        ]
+
+        # Get AI response using existing Cerebras function
+        async for response in get_cerebras_response(messages):
+            if "choices" in response and len(response["choices"]) > 0:
+                message = response["choices"][0].get("message", {})
+                if "content" in message:
+                    return {"description": message["content"].strip()}
+
+        raise HTTPException(status_code=500, detail="Failed to generate description")
+
+    except Exception as e:
+        logging.error(f"Error generating stop description: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating stop description: {str(e)}"
+        ) 

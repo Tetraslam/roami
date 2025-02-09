@@ -18,6 +18,14 @@
       ]
     },
     {
+      "collectionGroup": "journey_memories",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "weather",
       "queryScope": "COLLECTION",
       "fields": [

@@ -112,6 +112,23 @@ export interface ChatMessage {
   tripId?: string;
 }
 
+// Journey Memory
+export interface JourneyMemory {
+  id: string;
+  userId: string;
+  timestamp: Timestamp;
+  type: 'photo' | 'voice' | 'challenge' | 'location' | 'historical';
+  content: {
+    title: string;
+    description?: string;
+    mediaUrl?: string;
+    location?: GeoPoint;
+    challengeCompleted?: boolean;
+    historicalContext?: string;
+  };
+  tags: string[];
+}
+
 // Collection Names (for type-safe collection references)
 export const Collections = {
   USERS: 'users',
@@ -121,6 +138,7 @@ export const Collections = {
   PREFERENCES: 'preferences',
   WEATHER: 'weather',
   MESSAGES: 'messages',
+  JOURNEY_MEMORIES: 'journey_memories',
 } as const;
 
 export type CollectionName = typeof Collections[keyof typeof Collections]; 

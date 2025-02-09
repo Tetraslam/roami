@@ -26,6 +26,7 @@ import type {
   WeatherData,
   CollectionName,
   ChatMessage,
+  JourneyMemory,
 } from './types';
 
 // Generic type for all our data types
@@ -190,4 +191,50 @@ export async function getRecentMessages(
   
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => doc.data() as ChatMessage);
+}
+
+// Journey Memory utilities
+export async function saveJourneyMemory(memory: Omit<JourneyMemory, 'id' | 'timestamp'>): Promise<string> {
+  const memoriesRef = collection(db, Collections.JOURNEY_MEMORIES);
+  const docRef = doc(memoriesRef);
+  const memoryData: JourneyMemory = {
+    ...memory,
+    id: docRef.id,
+    timestamp: Timestamp.now(),
+  };
+  
+  await setDoc(docRef, memoryData);
+  return docRef.id;
+}
+
+export function subscribeToJourneyMemories(
+  userId: string,
+  callback: (memories: JourneyMemory[]) => void
+) {
+  const memoriesRef = collection(db, Collections.JOURNEY_MEMORIES);
+  const q = query(
+    memoriesRef,
+    where('userId', '==', userId),
+    orderBy('timestamp', 'desc')
+  );
+  
+  return onSnapshot(q, (snapshot) => {
+    const memories = snapshot.docs.map(doc => doc.data() as JourneyMemory);
+    callback(memories);
+  }, (error) => {
+    console.error('Error in journey memories subscription:', error);
+  });
+}
+
+export async function deleteJourneyMemory(memoryId: string) {
+  const memoryRef = doc(db, Collections.JOURNEY_MEMORIES, memoryId);
+  await deleteDoc(memoryRef);
+}
+
+export async function updateJourneyMemory(
+  memoryId: string,
+  updates: Partial<Omit<JourneyMemory, 'id' | 'userId' | 'timestamp'>>
+) {
+  const memoryRef = doc(db, Collections.JOURNEY_MEMORIES, memoryId);
+  await updateDoc(memoryRef, updates);
 } 
