@@ -1,8 +1,6 @@
 import './globals.css';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-
-const inter = Inter({ subsets: ['latin'] });
+import { ClientWrapper } from '@/components/ClientWrapper';
 
 export const metadata: Metadata = {
   title: 'Roami - Your Roadtrip Companion',
@@ -16,8 +14,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} bg-neutral-900 text-neutral-50 min-h-screen`}>
-        {children}
+      <body className="bg-neutral-900 text-neutral-50 min-h-screen antialiased">
+        <ClientWrapper>{children}</ClientWrapper>
       </body>
     </html>
   );

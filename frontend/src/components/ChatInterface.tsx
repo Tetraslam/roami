@@ -2,12 +2,13 @@
 
 import * as React from 'react';
 import { motion } from 'framer-motion';
+import { useTextToSpeech } from '@/hooks/useTextToSpeech';
 
 interface Message {
   id: string;
   type: 'user' | 'ai';
   content: string;
-  timestamp: Date;
+  timestamp: string;
   hasImage?: boolean;
   imageUrl?: string;
 }
@@ -16,18 +17,53 @@ interface ChatInterfaceProps {
   messages: Message[];
 }
 
-function formatTime(date: Date): string {
-  const hours = date.getHours().toString().padStart(2, '0');
-  const minutes = date.getMinutes().toString().padStart(2, '0');
-  return `${hours}:${minutes}`;
+function formatTime(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages }) => {
   const chatEndRef = React.useRef<HTMLDivElement>(null);
+  const { speak, stop } = useTextToSpeech();
+  const lastMessageRef = React.useRef<string | null>(null);
+  const speakTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
+  // Auto-scroll to bottom
   React.useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Auto-play new AI messages with debounce
+  React.useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.type === 'ai' && lastMessage.content !== lastMessageRef.current) {
+      lastMessageRef.current = lastMessage.content;
+      
+      // Clear any pending speech
+      if (speakTimeoutRef.current) {
+        clearTimeout(speakTimeoutRef.current);
+      }
+      stop();
+
+      // Delay speech slightly to avoid interruption
+      speakTimeoutRef.current = setTimeout(() => {
+        speak(lastMessage.content);
+      }, 100);
+    }
+  }, [messages, speak, stop]);
+
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      if (speakTimeoutRef.current) {
+        clearTimeout(speakTimeoutRef.current);
+      }
+      stop();
+    };
+  }, [stop]);
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
@@ -45,17 +81,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages }) => {
                 : 'bg-neutral-800 text-neutral-100 border border-neutral-700'
             }`}
           >
+            <p className="text-sm">{message.content}</p>
             {message.hasImage && message.imageUrl && (
               <img
                 src={message.imageUrl}
-                alt="Shared image"
-                className="w-full h-auto rounded-lg mb-2"
+                alt="User captured"
+                className="mt-2 rounded-lg max-w-full h-auto"
               />
             )}
-            <p className="text-sm">{message.content}</p>
-            <span className="text-xs opacity-70 mt-1 block">
-              {formatTime(message.timestamp)}
-            </span>
+            <p className="text-xs opacity-50 mt-1">{formatTime(message.timestamp)}</p>
           </div>
         </motion.div>
       ))}

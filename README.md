@@ -28,22 +28,14 @@
 - [ ] Or a story mode (basically an audiobook)  
 - [ ] Packing list  
 - [ ] Play music  
-- [ ] Location help (nearest bathroom, restaurant, etc.)  
-- [ ] Social travel (use opt-in location sharing to match drivers heading in the same direction through an encrypted chat)  
+- [ ] Location help (nearest bathroom, restaurant, etc.)
 - [ ] Tour guide  
-- [ ] Road trip battle royale bingo (find a red car, spot a McDonald’s, etc.)  
 - [ ] Roadtrip memory journal (visual, like BeReal - postcard? maps, captions, images, total miles driven, best stop)  
 - [ ] Is it worth the detour? (gas prices and route optimizer)  
 - [ ] Artificial spontaneity! (will help you do last-minute accommodations, find parking spots, food, etc.)  
 - [ ] Time machine mode (what the area around you looked like 50 years ago)  
 - [ ] Random detour mode (roadside diners, ghost towns, scenic overlooks, gives zero context and just says “trust me this is worth it”)  
-
----
-
-### **Driver Mode**  
-- [ ] Read my rights / police helper  
-- [ ] Car safety (drunk, eyes on the road, speed, track cars, weather)  
-- [ ] Moondream security (dashcams)  
+- [ ] Read my rights / police helper
 - [ ] Roadtrip assistant
 - [ ] Play music  
 - [ ] Location help (nearest bathroom, restaurant, etc.)
@@ -55,3 +47,4 @@
 - Next-PWA  
 - [PWAbuilder.com](http://PWAbuilder.com)  
 - [ ] "I spy with my little eye"  
+- [ ] Road trip battle royale bingo (find a red car, spot a McDonald’s, etc.)  

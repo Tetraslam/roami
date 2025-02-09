@@ -16,7 +16,7 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
   isListening,
 }) => {
   return (
-    <div className="fixed bottom-0 left-0 right-0 p-4 flex gap-4">
+    <div className="p-4 flex gap-4">
       <button
         onClick={isListening ? onVoiceEnd : onVoiceStart}
         className={`flex-1 h-14 rounded-full flex items-center justify-center transition-colors shadow-lg ${
